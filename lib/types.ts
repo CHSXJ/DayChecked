@@ -27,7 +27,15 @@ export interface EmployeePublic {
   created_at: string;
 }
 
-export type UserRole = "owner" | "employee" | "unknown";
+export type UserRole = "admin" | "owner" | "employee" | "unknown";
+
+export interface OwnerProfile {
+  user_id: string;
+  max_stores: number;
+  max_employees: number;
+  is_active: boolean;
+  created_at: string;
+}
 
 export interface AttendanceLog {
   id: string;

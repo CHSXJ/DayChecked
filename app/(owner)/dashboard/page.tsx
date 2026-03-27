@@ -5,7 +5,7 @@ import { createClient as createBrowserClient } from "@/lib/supabase-browser";
 import AttendanceTable from "@/components/AttendanceTable";
 import ThemeToggle from "@/components/ThemeToggle";
 import AppLogo from "@/components/AppLogo";
-import type { Store, EmployeePublic, AttendanceLogWithEmployee } from "@/lib/types";
+import type { Store, EmployeePublic, AttendanceLogWithEmployee, OwnerProfile } from "@/lib/types";
 
 type Tab = "stores" | "employees" | "logs";
 
@@ -26,6 +26,7 @@ export default function DashboardPage() {
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [ownerIsEmployee, setOwnerIsEmployee] = useState(false);
+  const [ownerProfile, setOwnerProfile] = useState<OwnerProfile | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [storeForm, setStoreForm] = useState<NewStoreForm>({ name: "", lat: "", lng: "", radius_meters: "100" });
@@ -44,7 +45,18 @@ export default function DashboardPage() {
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+    supabase.auth.getUser().then(async ({ data }) => {
+      const uid = data.user?.id ?? null;
+      setUserId(uid);
+      if (uid) {
+        const { data: profile } = await supabase
+          .from("owner_profiles")
+          .select("*")
+          .eq("user_id", uid)
+          .maybeSingle();
+        setOwnerProfile(profile as OwnerProfile | null);
+      }
+    });
   }, [supabase]);
 
   const loadStores = useCallback(async () => {
@@ -86,16 +98,27 @@ export default function DashboardPage() {
   const handleCreateStore = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userId) return;
+
+    // Client-side limit check for immediate feedback
+    if (ownerProfile && stores.length >= ownerProfile.max_stores) {
+      showToast(`ถึงขีดจำกัดแล้ว (สูงสุด ${ownerProfile.max_stores} ร้าน)`, false);
+      return;
+    }
+
     setLoading(true);
-    const { error } = await supabase.from("stores").insert({
-      name: storeForm.name,
-      lat: parseFloat(storeForm.lat),
-      lng: parseFloat(storeForm.lng),
-      radius_meters: parseInt(storeForm.radius_meters, 10),
-      owner_id: userId,
+    const res = await fetch("/api/stores", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: storeForm.name,
+        lat: parseFloat(storeForm.lat),
+        lng: parseFloat(storeForm.lng),
+        radius_meters: parseInt(storeForm.radius_meters, 10),
+      }),
     });
+    const data = await res.json();
     setLoading(false);
-    if (error) { showToast("สร้างร้านไม่สำเร็จ: " + error.message, false); }
+    if (!res.ok) { showToast("สร้างร้านไม่สำเร็จ: " + (data.error ?? ""), false); }
     else { showToast("สร้างร้านสำเร็จ!"); setStoreForm({ name: "", lat: "", lng: "", radius_meters: "100" }); loadStores(); }
   };
 
@@ -256,11 +279,15 @@ export default function DashboardPage() {
         {/* Stats pills */}
         <div className="px-4 pb-4 flex gap-2">
           <div className="flex-1 rounded-xl py-2 text-center" style={{ background: "var(--primary-bg)" }}>
-            <p className="text-lg font-extrabold leading-none" style={{ color: "var(--primary-dark)" }}>{stores.length}</p>
+            <p className="text-lg font-extrabold leading-none" style={{ color: "var(--primary-dark)" }}>
+              {stores.length}{ownerProfile ? `/${ownerProfile.max_stores}` : ""}
+            </p>
             <p className="text-xs mt-0.5" style={{ color: "var(--primary-dark)", opacity: 0.7 }}>ร้าน</p>
           </div>
           <div className="flex-1 rounded-xl py-2 text-center" style={{ background: "var(--accent-bg)" }}>
-            <p className="text-lg font-extrabold leading-none" style={{ color: "var(--accent-dark)" }}>{employees.length}</p>
+            <p className="text-lg font-extrabold leading-none" style={{ color: "var(--accent-dark)" }}>
+              {employees.length}{ownerProfile ? `/${ownerProfile.max_employees}` : ""}
+            </p>
             <p className="text-xs mt-0.5" style={{ color: "var(--accent-dark)", opacity: 0.7 }}>พนักงาน</p>
           </div>
         </div>

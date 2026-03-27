@@ -13,7 +13,11 @@
       "Bash(node -e \":*)",
       "Bash(ls -lh /Users/cher/Workspace/day-checked/public/*.png /Users/cher/Workspace/day-checked/public/*.svg)",
       "Bash(grep -E \"vercel|netlify|railway|fly|docker|\\\\.env\" cat /Users/cher/Workspace/day-checked/.env*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(ls app/\\\\\\(employee\\\\\\)/)",
+      "Bash(ls app/\\\\\\(owner\\\\\\)/)",
+      "Bash(ls app/\\\\\\(employee\\\\\\)/check-in/)",
+      "Bash(ls app/\\\\\\(owner\\\\\\)/dashboard/)"
     ]
   }
 }

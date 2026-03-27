@@ -40,8 +40,26 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // Verify store belongs to this owner
   const { data: store } = await supabase
-    .from("stores").select("id").eq("id", store_id).eq("owner_id", user.id).single();
+    .from("stores").select("id, owner_id").eq("id", store_id).eq("owner_id", user.id).single();
   if (!store) return NextResponse.json({ error: "ไม่พบร้าน หรือไม่มีสิทธิ์" }, { status: 403 });
+
+  // Enforce max_employees limit (total across all owner's stores)
+  const [{ data: profile }, { count: empCount }] = await Promise.all([
+    supabase.from("owner_profiles").select("max_employees").eq("user_id", user.id).maybeSingle(),
+    supabase
+      .from("employees")
+      .select("id", { count: "exact", head: true })
+      .in("store_id",
+        (await supabase.from("stores").select("id").eq("owner_id", user.id)).data?.map((s) => s.id) ?? []
+      ),
+  ]);
+
+  if (profile && (empCount ?? 0) >= profile.max_employees) {
+    return NextResponse.json({
+      error: `ถึงขีดจำกัดแล้ว (สูงสุด ${profile.max_employees} พนักงาน)`,
+      limit_reached: true,
+    }, { status: 403 });
+  }
 
   let employeeUserId: string;
 

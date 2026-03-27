@@ -77,6 +77,30 @@ export interface Database {
           }
         ];
       };
+      owner_profiles: {
+        Row: {
+          user_id: string;
+          max_stores: number;
+          max_employees: number;
+          is_active: boolean;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          max_stores?: number;
+          max_employees?: number;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          max_stores?: number;
+          max_employees?: number;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       attendance_logs: {
         Row: {
           id: string;

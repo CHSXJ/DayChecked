@@ -11,15 +11,12 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [isSignUp, setIsSignUp] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
-    const { error: authError } = isSignUp
-      ? await supabase.auth.signUp({ email, password })
-      : await supabase.auth.signInWithPassword({ email, password });
+    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (authError) { setError(authError.message); }
     else { window.location.href = "/"; }
@@ -62,12 +59,10 @@ export default function LoginPage() {
           </div>
 
           <h1 className="text-4xl font-extrabold tracking-tight mb-2" style={{ color: "var(--text)" }}>
-            {isSignUp ? "สมัครสมาชิก" : "ยินดีต้อนรับ"}
+            ยินดีต้อนรับ
           </h1>
           <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-            {isSignUp
-              ? "สร้างบัญชีสำหรับเจ้าของร้านใหม่"
-              : "เข้าสู่ระบบเพื่อจัดการร้านของคุณ"}
+            เข้าสู่ระบบเพื่อดำเนินการต่อ
           </p>
         </div>
 
@@ -154,28 +149,10 @@ export default function LoginPage() {
                   </svg>
                   กำลังดำเนินการ...
                 </span>
-              ) : isSignUp ? "สร้างบัญชี" : "เข้าสู่ระบบ"}
+              ) : "เข้าสู่ระบบ"}
             </button>
           </form>
 
-          {/* Divider */}
-          <div className="flex items-center gap-3">
-            <div className="flex-1 h-px" style={{ background: "var(--border)" }} />
-            <span className="text-xs font-medium px-1" style={{ color: "var(--text-muted)" }}>หรือ</span>
-            <div className="flex-1 h-px" style={{ background: "var(--border)" }} />
-          </div>
-
-          {/* Switch mode */}
-          <div className="text-center text-sm" style={{ color: "var(--text-muted)" }}>
-            {isSignUp ? "มีบัญชีแล้ว? " : "ยังไม่มีบัญชี? "}
-            <button
-              onClick={() => { setIsSignUp(!isSignUp); setError(""); }}
-              className="font-bold hover:underline underline-offset-2"
-              style={{ color: "var(--primary-dark)" }}
-            >
-              {isSignUp ? "เข้าสู่ระบบ" : "สมัครสมาชิก"}
-            </button>
-          </div>
         </div>
 
         {/* Footer */}

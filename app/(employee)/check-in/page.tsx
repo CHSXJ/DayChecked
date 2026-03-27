@@ -65,7 +65,6 @@ export default function CheckInPage() {
         <div className="flex items-center justify-between">
           <AppLogo iconSize={32} textSize={16} />
           <div className="flex items-center gap-2">
-            <ThemeToggle />
             {isOwner && (
               <a href="/dashboard" className="btn-ghost text-xs px-3 py-1.5 flex items-center gap-1.5"
                 style={{ color: "var(--primary-dark)" }}>
@@ -75,9 +74,12 @@ export default function CheckInPage() {
                 Dashboard
               </a>
             )}
-            <button onClick={signOut} className="btn-ghost text-xs px-3 py-1.5"
+            <ThemeToggle />
+            <button onClick={signOut} className="theme-toggle" title="ออกจากระบบ"
               style={{ color: "var(--danger)" }}>
-              ออกจากระบบ
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
             </button>
           </div>
         </div>

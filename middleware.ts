@@ -23,8 +23,20 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser();
   const { pathname } = request.nextUrl;
+  const role = user?.user_metadata?.role as string | undefined;
 
-  // Protected routes — redirect to login if not authenticated
+  // ── Admin-only routes ──────────────────────────────────────────────────────
+  if (pathname.startsWith("/admin")) {
+    if (!user) return NextResponse.redirect(new URL("/login", request.url));
+    if (role !== "admin") {
+      if (role === "owner") return NextResponse.redirect(new URL("/dashboard", request.url));
+      if (role === "employee") return NextResponse.redirect(new URL("/check-in", request.url));
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+    return response;
+  }
+
+  // ── Owner/employee protected routes ───────────────────────────────────────
   const protectedPaths = ["/dashboard", "/check-in"];
   const isProtected = protectedPaths.some((p) => pathname.startsWith(p));
 
@@ -32,8 +44,28 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Already logged in — let app/page.tsx handle role-based redirect
+  // ── Redirect admin away from owner/employee pages ─────────────────────────
+  if (isProtected && role === "admin") {
+    return NextResponse.redirect(new URL("/admin", request.url));
+  }
+
+  // ── Check owner is_active (suspended accounts) ────────────────────────────
+  if (isProtected && role === "owner") {
+    const { data: profile } = await supabase
+      .from("owner_profiles")
+      .select("is_active")
+      .eq("user_id", user!.id)
+      .maybeSingle();
+
+    // Profile exists and is explicitly deactivated → suspend
+    if (profile && !profile.is_active) {
+      return NextResponse.redirect(new URL("/suspended", request.url));
+    }
+  }
+
+  // ── Already logged in on /login ────────────────────────────────────────────
   if (pathname === "/login" && user) {
+    if (role === "admin") return NextResponse.redirect(new URL("/admin", request.url));
     return NextResponse.redirect(new URL("/", request.url));
   }
 
@@ -41,5 +73,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/check-in/:path*", "/check-in", "/login"],
+  matcher: ["/admin/:path*", "/dashboard/:path*", "/check-in/:path*", "/check-in", "/login", "/suspended"],
 };

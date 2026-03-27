@@ -1,0 +1,23 @@
+-- =====================
+-- Admin Role Setup Notes
+-- =====================
+-- No schema changes are required for the admin role.
+-- Admin identity is stored in Supabase auth.users.user_metadata:
+--   { "role": "admin" }  → admin
+--   { "role": "owner" }  → เจ้าของร้าน
+--   { "role": "employee" } → พนักงาน
+--
+-- Admin operations use the service-role key which bypasses RLS entirely.
+-- The existing RLS policies on stores/employees/attendance_logs remain unchanged.
+--
+-- HOW TO CREATE THE ADMIN ACCOUNT:
+--   1. Go to your Supabase dashboard → Authentication → Users → Add user
+--   2. Enter email & password
+--   3. After creating, click the user → Edit → user_metadata:
+--      {"role": "admin"}
+--   4. Save.
+--
+-- Or via SQL (run in Supabase SQL Editor):
+--   UPDATE auth.users
+--   SET raw_user_meta_data = raw_user_meta_data || '{"role":"admin"}'::jsonb
+--   WHERE email = 'your-admin@email.com';
