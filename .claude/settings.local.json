@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:api.github.com)",
+      "mcp__ide__getDiagnostics",
+      "Bash(npx tsc:*)",
+      "Bash(ls /Users/cher/Workspace/day-checked/public/*.png)",
+      "Bash(convert --version)",
+      "Bash(npm install:*)",
+      "Bash(node -e \"require\\(''sharp''\\); console.log\\(''sharp ok''\\)\")",
+      "Bash(node -e \":*)",
+      "Bash(ls -lh /Users/cher/Workspace/day-checked/public/*.png /Users/cher/Workspace/day-checked/public/*.svg)",
+      "Bash(grep -E \"vercel|netlify|railway|fly|docker|\\\\.env\" cat /Users/cher/Workspace/day-checked/.env*)",
+      "Bash(npm run:*)"
+    ]
+  }
+}
