@@ -42,6 +42,12 @@ export interface Database {
         };
         Relationships: [];
       };
+      shifts: {
+        Row: { id: string; store_id: string; name: string; start_time: string; end_time: string; created_at: string; };
+        Insert: { id?: string; store_id: string; name: string; start_time: string; end_time: string; created_at?: string; };
+        Update: { id?: string; store_id?: string; name?: string; start_time?: string; end_time?: string; };
+        Relationships: [];
+      };
       employees: {
         Row: {
           id: string;
@@ -51,6 +57,7 @@ export interface Database {
           is_active: boolean;
           user_id: string | null;
           created_at: string;
+          shift_id: string | null;
         };
         Insert: {
           id?: string;
@@ -60,6 +67,7 @@ export interface Database {
           is_active?: boolean;
           user_id?: string | null;
           created_at?: string;
+          shift_id?: string | null;
         };
         Update: {
           id?: string;
@@ -69,6 +77,7 @@ export interface Database {
           is_active?: boolean;
           user_id?: string | null;
           created_at?: string;
+          shift_id?: string | null;
         };
         Relationships: [
           {

@@ -3,14 +3,15 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { createClient as createBrowserClient } from "@/lib/supabase-browser";
 import AttendanceTable from "@/components/AttendanceTable";
+import StoreDetailDialog from "@/components/StoreDetailDialog";
 import ThemeToggle from "@/components/ThemeToggle";
 import AppLogo from "@/components/AppLogo";
-import type { Store, EmployeePublic, AttendanceLogWithEmployee, OwnerProfile } from "@/lib/types";
+import type { Store, EmployeePublic, AttendanceLogWithEmployee, OwnerProfile, Shift } from "@/lib/types";
 
 type Tab = "stores" | "employees" | "logs";
 
 interface NewStoreForm { name: string; lat: string; lng: string; radius_meters: string; }
-interface NewEmployeeForm { name: string; pin: string; store_id: string; email: string; password: string; isSelf: boolean; }
+interface NewEmployeeForm { name: string; pin: string; store_id: string; email: string; password: string; isSelf: boolean; shift_id: string; }
 
 export default function DashboardPage() {
   const supabase = createBrowserClient();
@@ -18,6 +19,7 @@ export default function DashboardPage() {
   const [tab, setTab] = useState<Tab>("stores");
   const [stores, setStores] = useState<Store[]>([]);
   const [employees, setEmployees] = useState<EmployeePublic[]>([]);
+  const [allShifts, setAllShifts] = useState<Shift[]>([]);
   const [logs, setLogs] = useState<AttendanceLogWithEmployee[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().slice(0, 7));
@@ -25,12 +27,13 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [dialogStoreId, setDialogStoreId] = useState<string | null>(null);
   const [ownerIsEmployee, setOwnerIsEmployee] = useState(false);
   const [ownerProfile, setOwnerProfile] = useState<OwnerProfile | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [storeForm, setStoreForm] = useState<NewStoreForm>({ name: "", lat: "", lng: "", radius_meters: "100" });
-  const [empForm, setEmpForm] = useState<NewEmployeeForm>({ name: "", pin: "", store_id: "", email: "", password: "", isSelf: false });
+  const [empForm, setEmpForm] = useState<NewEmployeeForm>({ name: "", pin: "", store_id: "", email: "", password: "", isSelf: false, shift_id: "" });
   const [editingStore, setEditingStore] = useState<Store | null>(null);
   const [editStoreForm, setEditStoreForm] = useState<NewStoreForm>({ name: "", lat: "", lng: "", radius_meters: "100" });
   const [editingEmp, setEditingEmp] = useState<EmployeePublic | null>(null);
@@ -85,6 +88,15 @@ export default function DashboardPage() {
     setOwnerIsEmployee(list.some((e) => e.user_id === userId));
   }, [supabase, userId, stores]);
 
+  const loadShifts = useCallback(async () => {
+    if (stores.length === 0) { setAllShifts([]); return; }
+    const results = await Promise.all(
+      stores.map((s) => fetch(`/api/shifts?store_id=${s.id}`).then((r) => r.json()))
+    );
+    const merged: Shift[] = results.flatMap((r) => r.shifts ?? []);
+    setAllShifts(merged);
+  }, [stores]);
+
   const loadLogs = useCallback(async () => {
     if (!selectedStoreId || !selectedMonth) return;
     setLoading(true);
@@ -98,7 +110,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (stores.length > 0 && !selectedStoreId) setSelectedStoreId(stores[0].id);
   }, [stores, selectedStoreId]);
-  useEffect(() => { if (stores.length > 0) loadEmployees(); }, [stores, loadEmployees]);
+  useEffect(() => { if (stores.length > 0) { loadEmployees(); loadShifts(); } }, [stores, loadEmployees, loadShifts]);
   useEffect(() => { if (tab === "logs") loadLogs(); }, [tab, selectedStoreId, selectedMonth, loadLogs]);
 
   const fillCurrentLocation = () => {
@@ -172,14 +184,16 @@ export default function DashboardPage() {
     e.preventDefault();
     if (!/^\d{4}$/.test(empForm.pin)) { showToast("PIN ต้องเป็นตัวเลข 4 หลัก", false); return; }
     setLoading(true);
+    const storeShifts = allShifts.filter((s) => s.store_id === empForm.store_id);
+    const shiftPayload = storeShifts.length > 0 && empForm.shift_id ? { shift_id: empForm.shift_id } : {};
     const payload = empForm.isSelf
-      ? { store_id: empForm.store_id, name: empForm.name, pin: empForm.pin, self: true }
-      : { store_id: empForm.store_id, name: empForm.name, pin: empForm.pin, email: empForm.email, password: empForm.password };
+      ? { store_id: empForm.store_id, name: empForm.name, pin: empForm.pin, self: true, ...shiftPayload }
+      : { store_id: empForm.store_id, name: empForm.name, pin: empForm.pin, email: empForm.email, password: empForm.password, ...shiftPayload };
     const res = await fetch("/api/employees", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const data = await res.json();
     setLoading(false);
     if (!res.ok) { showToast("เพิ่มพนักงานไม่สำเร็จ: " + (data.error ?? ""), false); }
-    else { showToast("เพิ่มพนักงานสำเร็จ!"); setEmpForm({ name: "", pin: "", store_id: "", email: "", password: "", isSelf: false }); loadEmployees(); }
+    else { showToast("เพิ่มพนักงานสำเร็จ!"); setEmpForm({ name: "", pin: "", store_id: "", email: "", password: "", isSelf: false, shift_id: "" }); loadEmployees(); }
   };
 
   const handleToggleEmployee = async (id: string, current: boolean) => {
@@ -263,6 +277,15 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen flex" style={{ background: "var(--bg-gradient)" }}>
+
+      {/* Store detail dialog */}
+      {dialogStoreId && (
+        <StoreDetailDialog
+          storeId={dialogStoreId}
+          onClose={() => setDialogStoreId(null)}
+          onStoreUpdated={loadStores}
+        />
+      )}
 
       {/* Mobile overlay */}
       {sidebarOpen && (
@@ -463,7 +486,7 @@ export default function DashboardPage() {
                         onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface-2)")}
                         onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                       >
-                        <a href={`/dashboard/stores/${store.id}`} className="flex items-center gap-3 flex-1 min-w-0">
+                        <button onClick={() => setDialogStoreId(store.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
                           <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
                             style={{ background: "linear-gradient(135deg,#a3e635,#84cc16)" }}>
                             <svg className="w-5 h-5" style={{ color: "#1a2e05" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -476,7 +499,7 @@ export default function DashboardPage() {
                               {store.lat.toFixed(8)}, {store.lng.toFixed(8)} · {store.radius_meters}m
                             </p>
                           </div>
-                        </a>
+                        </button>
                           <div className="flex items-center gap-1">
                           <button onClick={() => openEditStore(store)}
                             className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
@@ -543,12 +566,29 @@ export default function DashboardPage() {
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>สังกัดร้าน</label>
                     <select required value={empForm.store_id}
-                      onChange={(e) => setEmpForm((p) => ({ ...p, store_id: e.target.value }))}
+                      onChange={(e) => setEmpForm((p) => ({ ...p, store_id: e.target.value, shift_id: "" }))}
                       className="input-base">
                       <option value="">— เลือกร้าน —</option>
                       {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                   </div>
+                  {(() => {
+                    const storeShifts = allShifts.filter((s) => s.store_id === empForm.store_id);
+                    if (storeShifts.length === 0) return null;
+                    return (
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>กะเวลาทำงาน <span style={{ color: "var(--danger)" }}>*</span></label>
+                        <select required value={empForm.shift_id}
+                          onChange={(e) => setEmpForm((p) => ({ ...p, shift_id: e.target.value }))}
+                          className="input-base">
+                          <option value="">— เลือกกะ —</option>
+                          {storeShifts.map((sh) => (
+                            <option key={sh.id} value={sh.id}>{sh.name} ({sh.start_time.slice(0,5)}–{sh.end_time.slice(0,5)})</option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  })()}
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>ชื่อพนักงาน</label>
                     <input required type="text" placeholder="ชื่อ-นามสกุล"
@@ -597,7 +637,9 @@ export default function DashboardPage() {
                   <div className="px-5 py-12 text-center text-sm" style={{ color: "var(--text-muted)" }}>ยังไม่มีพนักงาน</div>
                 ) : (
                   <ul>
-                    {employees.map((emp) => (
+                    {employees.map((emp) => {
+                      const empShift = allShifts.find((s) => s.id === emp.shift_id);
+                      return (
                       <li key={emp.id}
                         className="px-5 py-3.5 flex items-center justify-between transition-colors"
                         style={{ borderBottom: "1px solid var(--border)" }}
@@ -613,6 +655,7 @@ export default function DashboardPage() {
                             <p className="font-bold text-sm" style={{ color: "var(--text)" }}>{emp.name}</p>
                             <p className="text-xs" style={{ color: "var(--text-muted)" }}>
                               {stores.find((s) => s.id === emp.store_id)?.name ?? "—"}
+                              {empShift && <span className="ml-1.5 px-1.5 py-0.5 rounded" style={{ background: "var(--accent-bg)", color: "var(--accent-dark)" }}>{empShift.name}</span>}
                             </p>
                           </div>
                         </div>
@@ -633,7 +676,7 @@ export default function DashboardPage() {
                           </button>
                         </div>
                       </li>
-                    ))}
+                    );})}
                   </ul>
                 )}
               </div>

@@ -21,7 +21,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   try { body = await req.json(); }
   catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
 
-  const { store_id, name, pin, self: isSelf, email, password } = body;
+  const { store_id, name, pin, self: isSelf, email, password, shift_id } = body as CreateEmployeeBody & { shift_id?: string };
 
   if (!store_id || !name || !pin) {
     return NextResponse.json({ error: "ข้อมูลไม่ครบถ้วน" }, { status: 400 });
@@ -59,6 +59,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       ),
   ]);
 
+  // Validate shift: if store has shifts, shift_id is required
+  const { data: storeShifts } = await supabase.from("shifts").select("id").eq("store_id", store_id);
+  if ((storeShifts ?? []).length > 0 && !shift_id) {
+    return NextResponse.json({ error: "ร้านนี้มีกะเวลา กรุณาระบุกะของพนักงาน" }, { status: 400 });
+  }
+  if (shift_id) {
+    const validShift = (storeShifts ?? []).some((s) => s.id === shift_id);
+    if (!validShift) return NextResponse.json({ error: "กะที่ระบุไม่ถูกต้อง" }, { status: 400 });
+  }
+
   if (profile && (empCount ?? 0) >= profile.max_employees) {
     return NextResponse.json({
       error: `ถึงขีดจำกัดแล้ว (สูงสุด ${profile.max_employees} พนักงาน)`,
@@ -93,8 +103,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const { data: employee, error: empError } = await supabase
     .from("employees")
-    .insert({ store_id, name, pin_hash, user_id: employeeUserId })
-    .select("id, store_id, name, is_active, user_id, created_at")
+    .insert({ store_id, name, pin_hash, user_id: employeeUserId, shift_id: shift_id ?? null })
+    .select("id, store_id, name, is_active, user_id, created_at, shift_id")
     .single();
 
   if (empError) {

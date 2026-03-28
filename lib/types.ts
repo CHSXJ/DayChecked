@@ -19,6 +19,15 @@ export interface Employee {
   created_at: string;
 }
 
+export interface Shift {
+  id: string;
+  store_id: string;
+  name: string;
+  start_time: string;
+  end_time: string;
+  created_at: string;
+}
+
 export interface EmployeePublic {
   id: string;
   store_id: string;
@@ -26,6 +35,7 @@ export interface EmployeePublic {
   is_active: boolean;
   user_id: string | null;
   created_at: string;
+  shift_id: string | null;
 }
 
 export type UserRole = "admin" | "owner" | "employee" | "unknown";

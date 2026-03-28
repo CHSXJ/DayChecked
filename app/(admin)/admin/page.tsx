@@ -64,6 +64,10 @@ export default function AdminPage() {
   const [filterOwnerId, setFilterOwnerId] = useState("");
   const [filterStoreId, setFilterStoreId] = useState("");
 
+  // Co-owners (edit panel)
+  const [editStoreOwners, setEditStoreOwners] = useState<{ user_id: string; email: string; name: string; is_primary: boolean }[]>([]);
+  const [coOwnerAddValue, setCoOwnerAddValue] = useState("");
+
   // Forms — create
   const [ownerForm, setOwnerForm] = useState(defaultOwnerForm);
   const [storeForm, setStoreForm] = useState(defaultStoreForm);
@@ -79,6 +83,7 @@ export default function AdminPage() {
 
   // UI state
   const [loading, setLoading] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -249,6 +254,7 @@ export default function AdminPage() {
       radius_meters: parseInt(editStoreForm.radius_meters),
     } : s));
     setEditingStore(null);
+    setEditStoreOwners([]);
   };
 
   const deleteStore = async (store: StoreData) => {
@@ -317,6 +323,36 @@ export default function AdminPage() {
     setEmployees((prev) => prev.filter((e) => e.id !== emp.id));
   };
 
+  // ── Store co-owners ───────────────────────────────────────────────────────────
+
+  const loadEditStoreOwners = async (store_id: string) => {
+    const res = await fetch(`/api/admin/store-owners?store_id=${store_id}`);
+    if (res.ok) { const d = await res.json(); setEditStoreOwners(d.owners ?? []); }
+  };
+
+  const handleAddCoOwner = async (store_id: string) => {
+    if (!coOwnerAddValue) return;
+    const res = await fetch("/api/admin/store-owners", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ store_id, user_id: coOwnerAddValue }),
+    });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error ?? "เพิ่มไม่สำเร็จ", false); return; }
+    showToast("เพิ่มเจ้าของร้านร่วมสำเร็จ!");
+    setCoOwnerAddValue("");
+    await loadEditStoreOwners(store_id);
+  };
+
+  const handleRemoveCoOwner = async (store_id: string, user_id: string) => {
+    if (!confirm("ลบเจ้าของร้านร่วมคนนี้?")) return;
+    const res = await fetch(`/api/admin/store-owners?store_id=${store_id}&user_id=${user_id}`, { method: "DELETE" });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error ?? "ลบไม่สำเร็จ", false); return; }
+    showToast("ลบเจ้าของร้านร่วมสำเร็จ!");
+    await loadEditStoreOwners(store_id);
+  };
+
   // ── Filtered stores for employee tab ─────────────────────────────────────────
   const storesForFilter = filterOwnerId
     ? stores.filter((s) => s.owner_id === filterOwnerId)
@@ -324,8 +360,27 @@ export default function AdminPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────────
 
+  const TAB_LABELS: Record<Tab, string> = { owners: "เจ้าของร้าน", stores: "ร้านค้า", employees: "พนักงาน" };
+  const TAB_ICONS: Record<Tab, React.ReactNode> = {
+    owners: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+      </svg>
+    ),
+    stores: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+      </svg>
+    ),
+    employees: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+      </svg>
+    ),
+  };
+
   return (
-    <main className="min-h-screen" style={{ background: "var(--bg-gradient)" }}>
+    <div className="min-h-screen flex" style={{ background: "var(--bg-gradient)" }}>
 
       {/* Toast */}
       {toast && (
@@ -335,48 +390,167 @@ export default function AdminPage() {
         </div>
       )}
 
-      {/* Header */}
-      <header className="sticky top-0 z-40 backdrop-blur-xl border-b" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
-        <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <AppLogo iconSize={28} textSize={14} />
-            <span className="text-xs font-bold px-2 py-0.5 rounded-full"
-              style={{ background: "var(--accent-bg)", color: "var(--accent-dark)" }}>
-              Admin
-            </span>
+      {/* Mobile overlay */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-20 lg:hidden" style={{ background: "rgba(0,0,0,0.4)" }}
+          onClick={() => setSidebarOpen(false)} />
+      )}
+
+      {/* Sidebar */}
+      <aside
+        className={`fixed lg:sticky top-0 left-0 h-screen z-30 flex flex-col shrink-0 transition-transform duration-300 ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
+        style={{ width: "240px", background: "var(--surface)", borderRight: "1px solid var(--border)" }}
+      >
+        {/* Logo + badge */}
+        <div className="px-5 pt-6 pb-4 flex flex-col items-center gap-2">
+          <AppLogo iconSize={32} textSize={16} />
+          <span className="text-xs font-bold px-2.5 py-0.5 rounded-full"
+            style={{ background: "var(--accent-bg)", color: "var(--accent-dark)" }}>
+            Admin
+          </span>
+        </div>
+
+        {/* Stats pills */}
+        <div className="px-4 pb-4 grid grid-cols-2 gap-2">
+          <div className="rounded-xl py-2 text-center" style={{ background: "var(--accent-bg)" }}>
+            <p className="text-lg font-extrabold leading-none" style={{ color: "var(--accent-dark)" }}>{owners.length}</p>
+            <p className="text-xs mt-0.5" style={{ color: "var(--accent-dark)", opacity: 0.7 }}>เจ้าของ</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="rounded-xl py-2 text-center" style={{ background: "var(--primary-bg)" }}>
+            <p className="text-lg font-extrabold leading-none" style={{ color: "var(--primary-dark)" }}>{stores.length}</p>
+            <p className="text-xs mt-0.5" style={{ color: "var(--primary-dark)", opacity: 0.7 }}>ร้านค้า</p>
+          </div>
+        </div>
+
+        <div className="mx-4 mb-3 h-px" style={{ background: "var(--border)" }} />
+
+        {/* Nav */}
+        <nav className="flex-1 px-3 space-y-1">
+          {(["owners", "stores", "employees"] as Tab[]).map((t) => {
+            const active = tab === t;
+            return (
+              <button key={t} onClick={() => { setTab(t); setSidebarOpen(false); }}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-150"
+                style={active ? { background: "var(--accent-bg)", color: "var(--accent-dark)" } : { color: "var(--text-muted)" }}
+                onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = "var(--surface-2)"; }}
+                onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+              >
+                <span style={{ color: active ? "var(--accent-dark)" : "var(--text-muted)" }}>{TAB_ICONS[t]}</span>
+                {TAB_LABELS[t]}
+                {active && <span className="ml-auto w-1.5 h-1.5 rounded-full" style={{ background: "var(--accent)" }} />}
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="mx-4 mt-3 h-px" style={{ background: "var(--border)" }} />
+
+        {/* Bottom */}
+        <div className="px-3 py-4 space-y-1">
+          <div className="px-4 py-3 flex items-center gap-2">
             <ThemeToggle />
-            <button onClick={signOut} className="btn-ghost text-xs px-3 py-1.5" style={{ color: "var(--danger)" }}>
-              ออกจากระบบ
-            </button>
+            <span className="text-sm" style={{ color: "var(--text-muted)" }}>ธีม</span>
           </div>
+          <button onClick={signOut}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-150"
+            style={{ color: "var(--danger)" }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--danger-bg)"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            ออกจากระบบ
+          </button>
         </div>
-      </header>
+      </aside>
 
-      <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+      {/* Main area */}
+      <div className="flex-1 flex flex-col min-w-0">
 
-        {/* Tabs */}
-        <div className="flex gap-1 p-1 rounded-2xl w-fit" style={{ background: "var(--surface)" }}>
-          {(["owners", "stores", "employees"] as Tab[]).map((t) => (
-            <button key={t} onClick={() => setTab(t)}
-              className="px-5 py-2 rounded-xl text-sm font-semibold transition-all"
-              style={tab === t
-                ? { background: "var(--accent)", color: "#fff", boxShadow: "0 2px 8px rgba(251,146,60,0.4)" }
-                : { color: "var(--text-muted)" }}>
-              {t === "owners" ? "เจ้าของร้าน" : t === "stores" ? "ร้านค้า" : "พนักงาน"}
-            </button>
-          ))}
-        </div>
+        {/* Top bar */}
+        <header className="sticky top-0 z-10 flex items-center justify-between px-4 sm:px-6 h-14"
+          style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
+          <button className="lg:hidden p-2 rounded-lg" style={{ color: "var(--text-muted)" }}
+            onClick={() => setSidebarOpen(true)}>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          <p className="font-bold text-sm" style={{ color: "var(--text)" }}>{TAB_LABELS[tab]}</p>
+          <div className="hidden lg:block"><ThemeToggle /></div>
+        </header>
+
+        <main className="flex-1 p-4 sm:p-6 space-y-5">
 
         {/* ══════════════════════════════════════════════════════════════ */}
         {/* TAB: OWNERS                                                     */}
         {/* ══════════════════════════════════════════════════════════════ */}
         {tab === "owners" && (
-          <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 items-start">
+
+            {/* Owners list */}
+            <div className="space-y-3 lg:order-1">
+              {owners.length === 0 && (
+                <div className="card-glass p-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>
+                  ยังไม่มีบัญชีเจ้าของร้าน
+                </div>
+              )}
+              {owners.map((owner) => (
+                <div key={owner.id} className="card-glass p-4 space-y-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 font-bold text-sm"
+                      style={{ background: "var(--accent-bg)", color: "var(--accent-dark)" }}>
+                      {owner.name.charAt(0) || owner.email.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-sm truncate" style={{ color: "var(--text)" }}>{owner.name || "—"}</p>
+                        {owner.is_active === false && (
+                          <span className="text-xs font-bold px-1.5 py-0.5 rounded-md shrink-0"
+                            style={{ background: "var(--danger-bg)", color: "var(--danger)" }}>ระงับ</span>
+                        )}
+                      </div>
+                      <p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>{owner.email}</p>
+                    </div>
+                    <button onClick={() => {
+                      setEditingOwner(owner);
+                      setEditOwnerForm({
+                        name: owner.name, password: "",
+                        max_stores: String(owner.max_stores ?? 1),
+                        max_employees: String(owner.max_employees ?? 10),
+                        is_active: owner.is_active ?? true,
+                      });
+                    }} className="btn-ghost p-2 rounded-xl shrink-0" title="แก้ไข">
+                      <svg className="w-4 h-4" style={{ color: "var(--text-muted)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                    <button onClick={() => deleteOwner(owner)} className="btn-ghost p-2 rounded-xl shrink-0" title="ลบ">
+                      <svg className="w-4 h-4" style={{ color: "var(--danger)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                  {/* Profile limits */}
+                  {owner.max_stores !== null && (
+                    <div className="flex gap-2 pl-[52px]">
+                      <span className="text-xs px-2 py-0.5 rounded-md font-medium"
+                        style={{ background: "var(--primary-bg)", color: "var(--primary-dark)" }}>
+                        ร้าน {owner.store_count}/{owner.max_stores}
+                      </span>
+                      <span className="text-xs px-2 py-0.5 rounded-md font-medium"
+                        style={{ background: "var(--surface-2)", color: "var(--text-muted)" }}>
+                        พนักงานสูงสุด {owner.max_employees}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
 
             {/* Create / Edit form */}
-            <div className="card-glass p-6 space-y-5">
+            <div className="card-glass p-6 space-y-5 lg:order-2">
               <h2 className="font-bold text-base" style={{ color: "var(--text)" }}>
                 {editingOwner ? "แก้ไขบัญชีเจ้าของร้าน" : "สร้างบัญชีเจ้าของร้าน"}
               </h2>
@@ -459,65 +633,6 @@ export default function AdminPage() {
               </form>
             </div>
 
-            {/* Owners list */}
-            <div className="space-y-3">
-              {owners.length === 0 && (
-                <div className="card-glass p-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>
-                  ยังไม่มีบัญชีเจ้าของร้าน
-                </div>
-              )}
-              {owners.map((owner) => (
-                <div key={owner.id} className="card-glass p-4 space-y-2">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 font-bold text-sm"
-                      style={{ background: "var(--accent-bg)", color: "var(--accent-dark)" }}>
-                      {owner.name.charAt(0) || owner.email.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold text-sm truncate" style={{ color: "var(--text)" }}>{owner.name || "—"}</p>
-                        {owner.is_active === false && (
-                          <span className="text-xs font-bold px-1.5 py-0.5 rounded-md shrink-0"
-                            style={{ background: "var(--danger-bg)", color: "var(--danger)" }}>ระงับ</span>
-                        )}
-                      </div>
-                      <p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>{owner.email}</p>
-                    </div>
-                    <button onClick={() => {
-                      setEditingOwner(owner);
-                      setEditOwnerForm({
-                        name: owner.name, password: "",
-                        max_stores: String(owner.max_stores ?? 1),
-                        max_employees: String(owner.max_employees ?? 10),
-                        is_active: owner.is_active ?? true,
-                      });
-                    }} className="btn-ghost p-2 rounded-xl shrink-0" title="แก้ไข">
-                      <svg className="w-4 h-4" style={{ color: "var(--text-muted)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                    </button>
-                    <button onClick={() => deleteOwner(owner)} className="btn-ghost p-2 rounded-xl shrink-0" title="ลบ">
-                      <svg className="w-4 h-4" style={{ color: "var(--danger)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
-                  </div>
-                  {/* Profile limits */}
-                  {owner.max_stores !== null && (
-                    <div className="flex gap-2 pl-[52px]">
-                      <span className="text-xs px-2 py-0.5 rounded-md font-medium"
-                        style={{ background: "var(--primary-bg)", color: "var(--primary-dark)" }}>
-                        ร้าน {owner.store_count}/{owner.max_stores}
-                      </span>
-                      <span className="text-xs px-2 py-0.5 rounded-md font-medium"
-                        style={{ background: "var(--surface-2)", color: "var(--text-muted)" }}>
-                        พนักงานสูงสุด {owner.max_employees}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
           </div>
         )}
 
@@ -525,7 +640,57 @@ export default function AdminPage() {
         {/* TAB: STORES                                                     */}
         {/* ══════════════════════════════════════════════════════════════ */}
         {tab === "stores" && (
-          <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 items-start">
+
+            {/* Stores list */}
+            <div className="space-y-4">
+              {/* Filter */}
+              <select value={filterOwnerId} onChange={(e) => setFilterOwnerId(e.target.value)} className="input-base max-w-xs">
+                <option value="">ร้านค้าทั้งหมด</option>
+                {owners.map((o) => <option key={o.id} value={o.id}>{o.name || o.email}</option>)}
+              </select>
+
+              {stores.length === 0 && (
+                <div className="card-glass p-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>
+                  ยังไม่มีร้านค้า
+                </div>
+              )}
+              {stores.map((store) => (
+                <div key={store.id} className="card-glass p-4 flex items-start gap-3"
+                  style={editingStore?.id === store.id ? { border: "1px solid var(--accent)" } : {}}>
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                    style={{ background: "var(--primary-bg)" }}>
+                    <svg className="w-4 h-4" style={{ color: "var(--primary-dark)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                    </svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm" style={{ color: "var(--text)" }}>{store.name}</p>
+                    <p className="text-xs" style={{ color: "var(--text-muted)" }}>{store.owner_name || store.owner_email}</p>
+                    <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
+                      {store.lat}, {store.lng} · {store.radius_meters}m · {store.employee_count} พนักงาน
+                    </p>
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <button onClick={() => {
+                      setEditingStore(store);
+                      setEditStoreForm({ name: store.name, lat: String(store.lat), lng: String(store.lng), radius_meters: String(store.radius_meters) });
+                      setCoOwnerAddValue("");
+                      loadEditStoreOwners(store.id);
+                    }} className="btn-ghost p-2 rounded-xl" title="แก้ไข">
+                      <svg className="w-4 h-4" style={{ color: "var(--text-muted)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                    <button onClick={() => deleteStore(store)} className="btn-ghost p-2 rounded-xl" title="ลบ">
+                      <svg className="w-4 h-4" style={{ color: "var(--danger)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
 
             {/* Create / Edit form */}
             <div className="card-glass p-6 space-y-5">
@@ -586,64 +751,67 @@ export default function AdminPage() {
                     {loading ? "กำลังบันทึก..." : editingStore ? "บันทึก" : "สร้างร้าน"}
                   </button>
                   {editingStore && (
-                    <button type="button" onClick={() => setEditingStore(null)} className="btn-outlined px-4 py-2.5 text-sm">
+                    <button type="button" onClick={() => { setEditingStore(null); setEditStoreOwners([]); }} className="btn-outlined px-4 py-2.5 text-sm">
                       ยกเลิก
                     </button>
                   )}
                 </div>
               </form>
-            </div>
 
-            {/* Stores list */}
-            <div className="space-y-4">
-              {/* Filter */}
-              <select value={filterOwnerId} onChange={(e) => setFilterOwnerId(e.target.value)} className="input-base max-w-xs">
-                <option value="">ร้านค้าทั้งหมด</option>
-                {owners.map((o) => <option key={o.id} value={o.id}>{o.name || o.email}</option>)}
-              </select>
-
-              {stores.length === 0 && (
-                <div className="card-glass p-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>
-                  ยังไม่มีร้านค้า
+              {/* Co-owners section — visible only when editing a store */}
+              {editingStore && (
+                <div className="space-y-2 pt-1" style={{ borderTop: "1px solid var(--border)" }}>
+                  <p className="text-xs font-bold uppercase tracking-widest pt-3" style={{ color: "var(--text-muted)" }}>
+                    เจ้าของร้าน
+                  </p>
+                  {editStoreOwners.map((o) => (
+                    <div key={o.user_id} className="flex items-center gap-2 py-1">
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-xs font-bold"
+                        style={{ background: o.is_primary ? "linear-gradient(135deg,#fb923c,#f97316)" : "var(--surface-2)", color: o.is_primary ? "#fff" : "var(--text-muted)" }}>
+                        {(o.name || o.email).charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold truncate" style={{ color: "var(--text)" }}>{o.name || "—"}</p>
+                        <p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>{o.email}</p>
+                      </div>
+                      {o.is_primary
+                        ? <span className="text-xs px-2 py-0.5 rounded-full font-semibold shrink-0"
+                            style={{ background: "var(--accent-bg)", color: "var(--accent-dark)" }}>เจ้าของหลัก</span>
+                        : <button onClick={() => handleRemoveCoOwner(editingStore.id, o.user_id)}
+                            className="text-xs px-2.5 py-0.5 rounded-lg shrink-0 transition-colors"
+                            style={{ color: "var(--danger)", border: "1px solid var(--danger)" }}
+                            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--danger-bg)")}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
+                            ลบ
+                          </button>
+                      }
+                    </div>
+                  ))}
+                  {/* Add co-owner */}
+                  {(() => {
+                    const existingIds = new Set(editStoreOwners.map((o) => o.user_id));
+                    const eligible = owners.filter((o) => !existingIds.has(o.id));
+                    return (
+                      <div className="flex gap-2 pt-1">
+                        <select value={coOwnerAddValue} onChange={(e) => setCoOwnerAddValue(e.target.value)}
+                          className="input-base flex-1 text-sm">
+                          <option value="">— เลือกเจ้าของร้านร่วม —</option>
+                          {eligible.map((o) => (
+                            <option key={o.id} value={o.id}>{o.name || o.email}</option>
+                          ))}
+                        </select>
+                        <button onClick={() => handleAddCoOwner(editingStore.id)}
+                          disabled={!coOwnerAddValue}
+                          className="btn-lime px-4 py-2 text-sm shrink-0">
+                          เพิ่ม
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
-              {stores.map((store) => (
-                <div key={store.id} className="card-glass p-4 space-y-2">
-                  <div className="flex items-start gap-3">
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-                      style={{ background: "var(--primary-bg)" }}>
-                      <svg className="w-4 h-4" style={{ color: "var(--primary-dark)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                      </svg>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-sm" style={{ color: "var(--text)" }}>{store.name}</p>
-                      <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-                        {store.owner_name || store.owner_email}
-                      </p>
-                      <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
-                        {store.lat}, {store.lng} · {store.radius_meters}m · {store.employee_count} พนักงาน
-                      </p>
-                    </div>
-                    <div className="flex gap-1 shrink-0">
-                      <button onClick={() => {
-                        setEditingStore(store);
-                        setEditStoreForm({ name: store.name, lat: String(store.lat), lng: String(store.lng), radius_meters: String(store.radius_meters) });
-                      }} className="btn-ghost p-2 rounded-xl" title="แก้ไข">
-                        <svg className="w-4 h-4" style={{ color: "var(--text-muted)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                      </button>
-                      <button onClick={() => deleteStore(store)} className="btn-ghost p-2 rounded-xl" title="ลบ">
-                        <svg className="w-4 h-4" style={{ color: "var(--danger)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
             </div>
+
           </div>
         )}
 
@@ -651,63 +819,7 @@ export default function AdminPage() {
         {/* TAB: EMPLOYEES                                                  */}
         {/* ══════════════════════════════════════════════════════════════ */}
         {tab === "employees" && (
-          <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6 items-start">
-
-            {/* Create / Edit form */}
-            <div className="card-glass p-6 space-y-5">
-              <h2 className="font-bold text-base" style={{ color: "var(--text)" }}>
-                {editingEmp ? "แก้ไขพนักงาน" : "เพิ่มพนักงาน"}
-              </h2>
-              <form onSubmit={editingEmp ? updateEmployee : createEmployee} className="space-y-3">
-                {!editingEmp && (
-                  <>
-                    <select required value={empForm.store_id}
-                      onChange={(e) => setEmpForm((f) => ({ ...f, store_id: e.target.value }))}
-                      className="input-base">
-                      <option value="">-- เลือกร้านค้า --</option>
-                      {stores.map((s) => (
-                        <option key={s.id} value={s.id}>{s.name} ({s.owner_name || s.owner_email})</option>
-                      ))}
-                    </select>
-                    <input required placeholder="ชื่อพนักงาน" value={empForm.name}
-                      onChange={(e) => setEmpForm((f) => ({ ...f, name: e.target.value }))}
-                      className="input-base" />
-                    <input required placeholder="PIN 4 หลัก" maxLength={4} value={empForm.pin}
-                      onChange={(e) => setEmpForm((f) => ({ ...f, pin: e.target.value.replace(/\D/g, "") }))}
-                      className="input-base" />
-                    <p className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>บัญชีสำหรับเข้าสู่ระบบ (ไม่บังคับ)</p>
-                    <input type="email" placeholder="อีเมล (ถ้าต้องการ)" value={empForm.email}
-                      onChange={(e) => setEmpForm((f) => ({ ...f, email: e.target.value }))}
-                      className="input-base" />
-                    {empForm.email && (
-                      <input type="password" placeholder="รหัสผ่าน (อย่างน้อย 6 ตัวอักษร)" value={empForm.password}
-                        onChange={(e) => setEmpForm((f) => ({ ...f, password: e.target.value }))}
-                        className="input-base" />
-                    )}
-                  </>
-                )}
-                {editingEmp && (
-                  <>
-                    <input placeholder="ชื่อใหม่ (ถ้าต้องการเปลี่ยน)" value={editEmpForm.name}
-                      onChange={(e) => setEditEmpForm((f) => ({ ...f, name: e.target.value }))}
-                      className="input-base" />
-                    <input placeholder="PIN ใหม่ (ถ้าต้องการเปลี่ยน)" maxLength={4} value={editEmpForm.pin}
-                      onChange={(e) => setEditEmpForm((f) => ({ ...f, pin: e.target.value.replace(/\D/g, "") }))}
-                      className="input-base" />
-                  </>
-                )}
-                <div className="flex gap-2">
-                  <button type="submit" disabled={loading} className="btn-lime flex-1 py-2.5 text-sm">
-                    {loading ? "กำลังบันทึก..." : editingEmp ? "บันทึก" : "เพิ่มพนักงาน"}
-                  </button>
-                  {editingEmp && (
-                    <button type="button" onClick={() => setEditingEmp(null)} className="btn-outlined px-4 py-2.5 text-sm">
-                      ยกเลิก
-                    </button>
-                  )}
-                </div>
-              </form>
-            </div>
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 items-start">
 
             {/* Employees list */}
             <div className="space-y-4">
@@ -774,9 +886,66 @@ export default function AdminPage() {
                 </div>
               ))}
             </div>
+
+            {/* Create / Edit form */}
+            <div className="card-glass p-6 space-y-5">
+              <h2 className="font-bold text-base" style={{ color: "var(--text)" }}>
+                {editingEmp ? "แก้ไขพนักงาน" : "เพิ่มพนักงาน"}
+              </h2>
+              <form onSubmit={editingEmp ? updateEmployee : createEmployee} className="space-y-3">
+                {!editingEmp && (
+                  <>
+                    <select required value={empForm.store_id}
+                      onChange={(e) => setEmpForm((f) => ({ ...f, store_id: e.target.value }))}
+                      className="input-base">
+                      <option value="">-- เลือกร้านค้า --</option>
+                      {stores.map((s) => (
+                        <option key={s.id} value={s.id}>{s.name} ({s.owner_name || s.owner_email})</option>
+                      ))}
+                    </select>
+                    <input required placeholder="ชื่อพนักงาน" value={empForm.name}
+                      onChange={(e) => setEmpForm((f) => ({ ...f, name: e.target.value }))}
+                      className="input-base" />
+                    <input required placeholder="PIN 4 หลัก" maxLength={4} value={empForm.pin}
+                      onChange={(e) => setEmpForm((f) => ({ ...f, pin: e.target.value.replace(/\D/g, "") }))}
+                      className="input-base" />
+                    <p className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>บัญชีสำหรับเข้าสู่ระบบ (ไม่บังคับ)</p>
+                    <input type="email" placeholder="อีเมล (ถ้าต้องการ)" value={empForm.email}
+                      onChange={(e) => setEmpForm((f) => ({ ...f, email: e.target.value }))}
+                      className="input-base" />
+                    {empForm.email && (
+                      <input type="password" placeholder="รหัสผ่าน (อย่างน้อย 6 ตัวอักษร)" value={empForm.password}
+                        onChange={(e) => setEmpForm((f) => ({ ...f, password: e.target.value }))}
+                        className="input-base" />
+                    )}
+                  </>
+                )}
+                {editingEmp && (
+                  <>
+                    <input placeholder="ชื่อใหม่ (ถ้าต้องการเปลี่ยน)" value={editEmpForm.name}
+                      onChange={(e) => setEditEmpForm((f) => ({ ...f, name: e.target.value }))}
+                      className="input-base" />
+                    <input placeholder="PIN ใหม่ (ถ้าต้องการเปลี่ยน)" maxLength={4} value={editEmpForm.pin}
+                      onChange={(e) => setEditEmpForm((f) => ({ ...f, pin: e.target.value.replace(/\D/g, "") }))}
+                      className="input-base" />
+                  </>
+                )}
+                <div className="flex gap-2">
+                  <button type="submit" disabled={loading} className="btn-lime flex-1 py-2.5 text-sm">
+                    {loading ? "กำลังบันทึก..." : editingEmp ? "บันทึก" : "เพิ่มพนักงาน"}
+                  </button>
+                  {editingEmp && (
+                    <button type="button" onClick={() => setEditingEmp(null)} className="btn-outlined px-4 py-2.5 text-sm">
+                      ยกเลิก
+                    </button>
+                  )}
+                </div>
+              </form>
+            </div>
           </div>
         )}
+        </main>
       </div>
-    </main>
+    </div>
   );
 }
