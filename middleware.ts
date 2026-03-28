@@ -49,6 +49,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/admin", request.url));
   }
 
+  // ── Employee cannot access /dashboard ─────────────────────────────────────
+  if (pathname.startsWith("/dashboard") && role === "employee") {
+    return NextResponse.redirect(new URL("/check-in", request.url));
+  }
+
   // ── Check owner is_active (suspended accounts) ────────────────────────────
   if (isProtected && role === "owner") {
     const { data: profile } = await supabase

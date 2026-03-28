@@ -38,19 +38,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const supabase = await createAdminClient();
 
-  // Verify store belongs to this owner
-  const { data: store } = await supabase
-    .from("stores").select("id, owner_id").eq("id", store_id).eq("owner_id", user.id).single();
-  if (!store) return NextResponse.json({ error: "ไม่พบร้าน หรือไม่มีสิทธิ์" }, { status: 403 });
+  // Verify store belongs to this owner (primary or co-owner)
+  const { data: store } = await supabase.from("stores").select("id, owner_id").eq("id", store_id).maybeSingle();
+  if (!store) return NextResponse.json({ error: "ไม่พบร้าน" }, { status: 404 });
+  const isPrimary = store.owner_id === user.id;
+  if (!isPrimary) {
+    const { data: co } = await supabase.from("store_owners").select("store_id").eq("store_id", store_id).eq("user_id", user.id).maybeSingle();
+    if (!co) return NextResponse.json({ error: "ไม่มีสิทธิ์" }, { status: 403 });
+  }
+  const primaryOwnerId = store.owner_id;
 
-  // Enforce max_employees limit (total across all owner's stores)
+  // Enforce max_employees limit against the primary owner's profile
   const [{ data: profile }, { count: empCount }] = await Promise.all([
-    supabase.from("owner_profiles").select("max_employees").eq("user_id", user.id).maybeSingle(),
+    supabase.from("owner_profiles").select("max_employees").eq("user_id", primaryOwnerId).maybeSingle(),
     supabase
       .from("employees")
       .select("id", { count: "exact", head: true })
       .in("store_id",
-        (await supabase.from("stores").select("id").eq("owner_id", user.id)).data?.map((s) => s.id) ?? []
+        (await supabase.from("stores").select("id").eq("owner_id", primaryOwnerId)).data?.map((s) => s.id) ?? []
       ),
   ]);
 
@@ -126,8 +131,10 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
   if (!emp) return NextResponse.json({ error: "ไม่พบพนักงาน" }, { status: 404 });
 
   const store = emp.stores as { owner_id: string } | null;
-  if (!store || store.owner_id !== user.id) {
-    return NextResponse.json({ error: "ไม่มีสิทธิ์" }, { status: 403 });
+  if (!store) return NextResponse.json({ error: "ไม่พบร้าน" }, { status: 404 });
+  if (store.owner_id !== user.id) {
+    const { data: co } = await supabase.from("store_owners").select("store_id").eq("store_id", (emp as { store_id: string }).store_id).eq("user_id", user.id).maybeSingle();
+    if (!co) return NextResponse.json({ error: "ไม่มีสิทธิ์" }, { status: 403 });
   }
 
   const updates: Record<string, string> = {};

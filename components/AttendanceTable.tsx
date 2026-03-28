@@ -256,8 +256,13 @@ export default function AttendanceTable({ logs, month }: { logs: AttendanceLogWi
                         {log.is_valid_location ? "✓ ในพื้นที่" : "✗ นอกพื้นที่"}
                       </span>
                       <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-                        {log.lat.toFixed(5)}, {log.lng.toFixed(5)}
+                        {log.lat.toFixed(8)}, {log.lng.toFixed(8)}
                       </span>
+                      {log.reason && (
+                        <span className="text-xs italic" style={{ color: "var(--text-muted)" }} title={log.reason}>
+                          "{log.reason.length > 30 ? log.reason.slice(0, 30) + "…" : log.reason}"
+                        </span>
+                      )}
                       <svg className="w-3 h-3 shrink-0" style={{ color: "var(--text-muted)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                       </svg>

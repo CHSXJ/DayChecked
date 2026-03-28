@@ -20,7 +20,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckInRespon
     return NextResponse.json({ success: false, error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { employee_id, store_id, type, lat, lng, pin } = body;
+  const { employee_id, store_id, type, lat, lng, pin, reason } = body;
 
   // 1. Basic validation
   if (!employee_id || !store_id || !type || lat == null || lng == null || !pin) {
@@ -104,12 +104,9 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckInRespon
 
   // 6. Server-side GPS validation
   const isValidLocation = isWithinRadius(lat, lng, store.lat, store.lng, store.radius_meters);
-  if (!isValidLocation) {
+  if (!isValidLocation && !reason?.trim()) {
     return NextResponse.json(
-      {
-        success: false,
-        error: `ตำแหน่งอยู่นอกพื้นที่ร้าน (radius ${store.radius_meters} เมตร)`,
-      },
+      { success: false, error: "อยู่นอกพื้นที่ร้าน กรุณาระบุเหตุผล" },
       { status: 403 }
     );
   }
@@ -149,6 +146,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<CheckInRespon
       lat,
       lng,
       is_valid_location: isValidLocation,
+      reason: reason?.trim() || null,
     })
     .select()
     .single();

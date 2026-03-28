@@ -18,6 +18,7 @@ export interface Database {
           radius_meters: number;
           owner_id: string;
           created_at: string;
+          allow_co_owners: boolean;
         };
         Insert: {
           id?: string;
@@ -27,6 +28,7 @@ export interface Database {
           radius_meters?: number;
           owner_id: string;
           created_at?: string;
+          allow_co_owners?: boolean;
         };
         Update: {
           id?: string;
@@ -36,6 +38,7 @@ export interface Database {
           radius_meters?: number;
           owner_id?: string;
           created_at?: string;
+          allow_co_owners?: boolean;
         };
         Relationships: [];
       };
@@ -77,6 +80,32 @@ export interface Database {
           }
         ];
       };
+      store_owners: {
+        Row: {
+          store_id: string;
+          user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          store_id: string;
+          user_id: string;
+          created_at?: string;
+        };
+        Update: {
+          store_id?: string;
+          user_id?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "store_owners_store_id_fkey";
+            columns: ["store_id"];
+            isOneToOne: false;
+            referencedRelation: "stores";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
       owner_profiles: {
         Row: {
           user_id: string;
@@ -111,6 +140,7 @@ export interface Database {
           lat: number;
           lng: number;
           is_valid_location: boolean;
+          reason: string | null;
         };
         Insert: {
           id?: string;
@@ -121,6 +151,7 @@ export interface Database {
           lat: number;
           lng: number;
           is_valid_location: boolean;
+          reason?: string | null;
         };
         Update: {
           id?: string;
@@ -131,6 +162,7 @@ export interface Database {
           lat?: number;
           lng?: number;
           is_valid_location?: boolean;
+          reason?: string | null;
         };
         Relationships: [
           {

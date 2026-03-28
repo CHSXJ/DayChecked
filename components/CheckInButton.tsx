@@ -12,9 +12,10 @@ interface CheckInButtonProps {
   onSuccess: (log: CheckInResponse["log"]) => void;
   onError: (message: string) => void;
   disabled?: boolean;
+  reason?: string;
 }
 
-export default function CheckInButton({ employeeId, store, pin, lastType, onSuccess, onError, disabled = false }: CheckInButtonProps) {
+export default function CheckInButton({ employeeId, store, pin, lastType, onSuccess, onError, disabled = false, reason }: CheckInButtonProps) {
   const [loading, setLoading] = useState(false);
   const submitting = useRef(false);
   const isCheckIn = lastType !== "in";
@@ -29,13 +30,15 @@ export default function CheckInButton({ employeeId, store, pin, lastType, onSucc
       catch (err) { onError(err instanceof Error ? err.message : "ไม่สามารถระบุ GPS ได้"); return; }
 
       const { latitude: lat, longitude: lng } = position.coords;
-      const distance = haversineDistance(lat, lng, store.lat, store.lng);
-      if (distance > store.radius_meters) {
-        onError(`อยู่นอกพื้นที่ ${Math.round(distance)} เมตร (อนุญาต ${store.radius_meters} เมตร)`);
-        return;
+      if (!reason) {
+        const distance = haversineDistance(lat, lng, store.lat, store.lng);
+        if (distance > store.radius_meters) {
+          onError(`อยู่นอกพื้นที่ ${Math.round(distance)} เมตร (อนุญาต ${store.radius_meters} เมตร)`);
+          return;
+        }
       }
 
-      const body: CheckInRequest = { employee_id: employeeId, store_id: store.id, type: isCheckIn ? "in" : "out", lat, lng, pin };
+      const body: CheckInRequest = { employee_id: employeeId, store_id: store.id, type: isCheckIn ? "in" : "out", lat, lng, pin, reason };
       const res = await fetch("/api/attendance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const data: CheckInResponse = await res.json();
       if (!res.ok || !data.success) { onError(data.error ?? "เกิดข้อผิดพลาด กรุณาลองใหม่"); return; }

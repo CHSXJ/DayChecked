@@ -26,6 +26,8 @@ export default function CheckInPage() {
   const [pinVerified, setPinVerified] = useState(false);
   const [pinError, setPinError] = useState("");
   const [verifyingPin, setVerifyingPin] = useState(false);
+  const [reason, setReason] = useState("");
+  const [reasonConfirmed, setReasonConfirmed] = useState(false);
 
   const checkGps = useCallback(async (storeData: Store) => {
     setStep("gps");
@@ -50,8 +52,11 @@ export default function CheckInPage() {
     const load = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setStep("no_record"); return; }
-      const { count } = await supabase.from("stores").select("id", { count: "exact", head: true }).eq("owner_id", user.id);
-      if (count && count > 0) setIsOwner(true);
+      const [{ count: ownedCount }, { count: coOwnedCount }] = await Promise.all([
+        supabase.from("stores").select("id", { count: "exact", head: true }).eq("owner_id", user.id),
+        supabase.from("store_owners").select("store_id", { count: "exact", head: true }).eq("user_id", user.id),
+      ]);
+      if ((ownedCount ?? 0) + (coOwnedCount ?? 0) > 0) setIsOwner(true);
       const { data: empRaw } = await supabase.from("employees").select("id, store_id, name, is_active, user_id, created_at").eq("user_id", user.id).eq("is_active", true).maybeSingle();
       const emp = empRaw as EmployeePublic | null;
       if (!emp) { setStep("no_record"); return; }
@@ -94,7 +99,7 @@ export default function CheckInPage() {
   };
   const handleSuccess = (log: CheckInResponse["log"]) => { if (log) { setSuccessLog(log); setLastType(log.type); } setStep("success"); };
   const handleError = (msg: string) => { setErrorMessage(msg); setStep("error"); };
-  const reset = () => { setPin(""); setPinVerified(false); setPinError(""); setStep("pin"); setErrorMessage(""); };
+  const reset = () => { setPin(""); setPinVerified(false); setPinError(""); setReason(""); setReasonConfirmed(false); setStep("pin"); setErrorMessage(""); };
   const recheckLocation = () => { if (store) checkGps(store); };
   const signOut = () => supabase.auth.signOut().then(() => (window.location.href = "/login"));
   const formatTime = (iso: string) => new Date(iso).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
@@ -184,26 +189,96 @@ export default function CheckInPage() {
               </span>
             </div>
 
-            {/* Out of area card */}
-            <div className="card-glass p-8 text-center space-y-4">
-              <div className="inline-flex w-16 h-16 rounded-full items-center justify-center mx-auto"
+            {/* Out of area notice */}
+            <div className="card-glass px-5 py-4 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
                 style={{ background: "var(--danger-bg)" }}>
-                <svg className="w-8 h-8" style={{ color: "var(--danger)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" style={{ color: "var(--danger)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
               </div>
-              <div>
-                <p className="text-lg font-extrabold" style={{ color: "var(--text)" }}>อยู่นอกพื้นที่</p>
-                <p className="text-sm mt-1" style={{ color: "var(--danger)" }}>{blockedMessage}</p>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-sm" style={{ color: "var(--text)" }}>อยู่นอกพื้นที่</p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--danger)" }}>{blockedMessage}</p>
               </div>
-              <button onClick={recheckLocation} className="btn-outlined flex items-center gap-2 mx-auto">
+              <button onClick={recheckLocation}
+                className="shrink-0 p-2 rounded-lg transition-colors"
+                title="ตรวจสอบอีกครั้ง"
+                style={{ color: "var(--text-muted)" }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface-2)")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+              >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-                ตรวจสอบอีกครั้ง
               </button>
             </div>
+
+            {/* Reason input */}
+            {!reasonConfirmed ? (
+              <div className="card-glass p-5 space-y-3">
+                <p className="text-sm font-semibold" style={{ color: "var(--text)" }}>
+                  ระบุเหตุผลเพื่อเข้า/ออกงานนอกพื้นที่
+                </p>
+                <textarea
+                  rows={3}
+                  placeholder="เช่น ไปส่งของนอกสถานที่, ประชุมนอกออฟฟิศ..."
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  className="input-base w-full resize-none"
+                />
+                <button
+                  onClick={() => setReasonConfirmed(true)}
+                  disabled={!reason.trim()}
+                  className="btn-lime w-full py-2.5"
+                  style={!reason.trim() ? { opacity: 0.4, cursor: "not-allowed" } : {}}
+                >
+                  ดำเนินการต่อ
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* Reason confirmed — show PIN */}
+                <div className="card-glass px-4 py-2.5 flex items-start gap-2">
+                  <svg className="w-4 h-4 mt-0.5 shrink-0" style={{ color: "var(--accent-dark)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <p className="text-sm flex-1" style={{ color: "var(--text-muted)" }}>{reason}</p>
+                  <button onClick={() => { setReasonConfirmed(false); setPinVerified(false); setPin(""); setPinError(""); }}
+                    className="text-xs shrink-0" style={{ color: "var(--text-muted)" }}>
+                    แก้ไข
+                  </button>
+                </div>
+
+                <div className="card-glass p-6 space-y-6">
+                  <p className="text-center text-sm font-semibold" style={{ color: "var(--text-muted)" }}>
+                    กรอก PIN 4 หลักเพื่อยืนยัน
+                  </p>
+                  <PinPad onComplete={handlePinComplete} disabled={verifyingPin} />
+                  {verifyingPin && (
+                    <p className="text-center text-xs" style={{ color: "var(--text-muted)" }}>กำลังตรวจสอบ PIN...</p>
+                  )}
+                  {pinError && !verifyingPin && (
+                    <p className="text-center text-sm font-semibold" style={{ color: "var(--danger)" }}>{pinError}</p>
+                  )}
+                </div>
+
+                {pinVerified && (
+                  <div className="card-glass p-4">
+                    <CheckInButton
+                      employeeId={employee.id}
+                      store={store}
+                      pin={pin}
+                      lastType={lastType}
+                      onSuccess={handleSuccess}
+                      onError={handleError}
+                      reason={reason}
+                    />
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
 

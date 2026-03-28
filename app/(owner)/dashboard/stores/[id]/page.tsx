@@ -8,6 +8,7 @@ import AppLogo from "@/components/AppLogo";
 import type { Store, EmployeePublic } from "@/lib/types";
 
 interface EditForm { name: string; lat: string; lng: string; radius_meters: string; }
+interface OwnerEntry { user_id: string; email: string; name: string; is_primary: boolean; }
 
 export default function StoreDetailPage() {
   const supabase = createBrowserClient();
@@ -17,11 +18,15 @@ export default function StoreDetailPage() {
 
   const [store, setStore] = useState<Store | null>(null);
   const [employees, setEmployees] = useState<EmployeePublic[]>([]);
+  const [owners, setOwners] = useState<OwnerEntry[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<EditForm>({ name: "", lat: "", lng: "", radius_meters: "" });
+  const [addOwnerEmail, setAddOwnerEmail] = useState("");
+  const [addingOwner, setAddingOwner] = useState(false);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -33,28 +38,35 @@ export default function StoreDetailPage() {
 
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
 
-  const loadStore = async (uid: string) => {
-    const { data: storeRaw } = await supabase
-      .from("stores").select("*").eq("id", storeId).eq("owner_id", uid).maybeSingle();
-    if (!storeRaw) { setNotFound(true); setLoading(false); return null; }
-    const s = storeRaw as Store;
-    setStore(s);
-    return s;
+  const loadOwners = async () => {
+    const res = await fetch(`/api/store-owners?store_id=${storeId}`);
+    if (res.ok) {
+      const data = await res.json();
+      setOwners(data.owners ?? []);
+    }
   };
 
   useEffect(() => {
     const load = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login"); return; }
+      setCurrentUserId(user.id);
 
-      const s = await loadStore(user.id);
-      if (!s) return;
+      // Load store — must be primary owner OR co-owner
+      const { data: storeRaw } = await supabase.from("stores").select("*").eq("id", storeId).maybeSingle();
+      if (!storeRaw) { setNotFound(true); setLoading(false); return; }
+      const s = storeRaw as Store;
+      const isPrimary = s.owner_id === user.id;
+      if (!isPrimary) {
+        const { data: co } = await supabase.from("store_owners").select("store_id").eq("store_id", storeId).eq("user_id", user.id).maybeSingle();
+        if (!co) { setNotFound(true); setLoading(false); return; }
+      }
+      setStore(s);
 
-      const { data: empRaw } = await supabase
-        .from("employees")
-        .select("id, store_id, name, is_active, user_id, created_at")
-        .eq("store_id", storeId)
-        .order("created_at", { ascending: false });
+      const [{ data: empRaw }] = await Promise.all([
+        supabase.from("employees").select("id, store_id, name, is_active, user_id, created_at").eq("store_id", storeId).order("created_at", { ascending: false }),
+        loadOwners(),
+      ]);
 
       setEmployees((empRaw ?? []) as EmployeePublic[]);
       setLoading(false);
@@ -71,9 +83,42 @@ export default function StoreDetailPage() {
 
   const fillGps = () => {
     navigator.geolocation.getCurrentPosition(
-      (pos) => setForm((p) => ({ ...p, lat: pos.coords.latitude.toFixed(6), lng: pos.coords.longitude.toFixed(6) })),
+      (pos) => setForm((p) => ({ ...p, lat: pos.coords.latitude.toFixed(8), lng: pos.coords.longitude.toFixed(8) })),
       () => showToast("ไม่สามารถดึง GPS ได้", false)
     );
+  };
+
+  const handleAddOwner = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAddingOwner(true);
+    const res = await fetch("/api/store-owners", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ store_id: storeId, email: addOwnerEmail }),
+    });
+    const data = await res.json();
+    setAddingOwner(false);
+    if (!res.ok) { showToast(data.error ?? "เพิ่มไม่สำเร็จ", false); return; }
+    setAddOwnerEmail("");
+    showToast("เพิ่มเจ้าของร้านร่วมสำเร็จ!");
+    loadOwners();
+  };
+
+  const handleRemoveOwner = async (userId: string) => {
+    if (!confirm("ลบเจ้าของร้านร่วมคนนี้?")) return;
+    const res = await fetch(`/api/store-owners?store_id=${storeId}&user_id=${userId}`, { method: "DELETE" });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error ?? "ลบไม่สำเร็จ", false); return; }
+    showToast("ลบเจ้าของร้านร่วมสำเร็จ!");
+    loadOwners();
+  };
+
+  const handleToggleCoOwners = async (enabled: boolean) => {
+    if (!store) return;
+    const { error } = await supabase.from("stores").update({ allow_co_owners: enabled }).eq("id", store.id);
+    if (error) { showToast("บันทึกการตั้งค่าไม่สำเร็จ", false); return; }
+    setStore((prev) => prev ? { ...prev, allow_co_owners: enabled } : prev);
+    showToast(enabled ? "เปิดใช้งานเจ้าของร้านร่วมแล้ว" : "ปิดใช้งานเจ้าของร้านร่วมแล้ว");
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -196,6 +241,26 @@ export default function StoreDetailPage() {
                   </div>
                 </div>
 
+                {/* Co-owners toggle — primary owner only */}
+                {store.owner_id === currentUserId && (
+                  <div className="flex items-center justify-between pt-1">
+                    <div className="flex items-center gap-2">
+                      <svg className="w-4 h-4 shrink-0" style={{ color: "var(--text-muted)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      <span className="text-sm" style={{ color: "var(--text-muted)" }}>อนุญาตเจ้าของร้านร่วม</span>
+                    </div>
+                    <button
+                      onClick={() => handleToggleCoOwners(!store.allow_co_owners)}
+                      className="relative w-11 h-6 rounded-full transition-colors duration-200 shrink-0"
+                      style={{ background: store.allow_co_owners ? "var(--primary)" : "var(--border-strong)" }}
+                    >
+                      <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200"
+                        style={{ left: store.allow_co_owners ? "calc(100% - 1.375rem)" : "0.125rem" }} />
+                    </button>
+                  </div>
+                )}
+
                 {/* Location row */}
                 <div className="flex items-center justify-between pt-1">
                   <div className="flex items-center gap-2">
@@ -204,7 +269,7 @@ export default function StoreDetailPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
                     <span className="text-sm" style={{ color: "var(--text-muted)" }}>
-                      {store.lat.toFixed(5)}, {store.lng.toFixed(5)}
+                      {store.lat.toFixed(8)}, {store.lng.toFixed(8)}
                     </span>
                   </div>
                   <a
@@ -287,6 +352,57 @@ export default function StoreDetailPage() {
                 </form>
               </div>
             )}
+
+            {/* Owners section — only when co-owners enabled */}
+            {store.allow_co_owners && <div className="space-y-2">
+              <p className="text-xs font-bold uppercase tracking-widest px-1" style={{ color: "var(--text-muted)" }}>
+                เจ้าของร้าน ({owners.length})
+              </p>
+
+              {owners.map((o) => (
+                <div key={o.user_id} className="card-glass px-4 py-3 flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm font-bold"
+                    style={{ background: o.is_primary ? "linear-gradient(135deg,#a3e635,#84cc16)" : "var(--surface-2)", color: o.is_primary ? "#1a2e05" : "var(--text-muted)" }}>
+                    {(o.name || o.email).charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm truncate" style={{ color: "var(--text)" }}>{o.name || "—"}</p>
+                    <p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>{o.email}</p>
+                  </div>
+                  {o.is_primary
+                    ? <span className="badge-lime">เจ้าของหลัก</span>
+                    : store?.owner_id === currentUserId && (
+                        <button
+                          onClick={() => handleRemoveOwner(o.user_id)}
+                          className="text-xs px-2.5 py-1 rounded-lg transition-colors"
+                          style={{ color: "var(--danger)", border: "1px solid var(--danger)" }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = "var(--danger-bg)")}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                        >
+                          ลบ
+                        </button>
+                      )
+                  }
+                </div>
+              ))}
+
+              {/* Add co-owner form — primary owner only */}
+              {store?.owner_id === currentUserId && (
+                <form onSubmit={handleAddOwner} className="card-glass px-4 py-3 flex gap-2">
+                  <input
+                    type="email"
+                    required
+                    placeholder="อีเมลเจ้าของร้านร่วม"
+                    value={addOwnerEmail}
+                    onChange={(e) => setAddOwnerEmail(e.target.value)}
+                    className="input-base flex-1 text-sm py-2"
+                  />
+                  <button type="submit" disabled={addingOwner} className="btn-lime px-4 py-2 text-sm shrink-0">
+                    {addingOwner ? "..." : "เพิ่ม"}
+                  </button>
+                </form>
+              )}
+            </div>}
 
             {/* Employees list */}
             <div className="space-y-2">

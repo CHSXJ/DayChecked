@@ -61,8 +61,18 @@ export default function DashboardPage() {
 
   const loadStores = useCallback(async () => {
     if (!userId) return;
-    const { data } = await supabase.from("stores").select("*").eq("owner_id", userId).order("created_at", { ascending: false });
-    setStores(data ?? []);
+    const [{ data: owned }, { data: coOwnedRows }] = await Promise.all([
+      supabase.from("stores").select("*").eq("owner_id", userId).order("created_at", { ascending: false }),
+      supabase.from("store_owners").select("store_id").eq("user_id", userId),
+    ]);
+    const coIds = (coOwnedRows ?? []).map((r) => r.store_id);
+    let coOwned: typeof owned = [];
+    if (coIds.length > 0) {
+      const { data } = await supabase.from("stores").select("*").in("id", coIds).order("created_at", { ascending: false });
+      coOwned = data ?? [];
+    }
+    const merged = [...(owned ?? []), ...coOwned.filter((s) => !(owned ?? []).some((o) => o.id === s.id))];
+    setStores(merged as Store[]);
   }, [supabase, userId]);
 
   const loadEmployees = useCallback(async () => {
@@ -85,12 +95,15 @@ export default function DashboardPage() {
   }, [selectedStoreId, selectedMonth]);
 
   useEffect(() => { loadStores(); }, [loadStores]);
+  useEffect(() => {
+    if (stores.length > 0 && !selectedStoreId) setSelectedStoreId(stores[0].id);
+  }, [stores, selectedStoreId]);
   useEffect(() => { if (stores.length > 0) loadEmployees(); }, [stores, loadEmployees]);
   useEffect(() => { if (tab === "logs") loadLogs(); }, [tab, selectedStoreId, selectedMonth, loadLogs]);
 
   const fillCurrentLocation = () => {
     navigator.geolocation.getCurrentPosition(
-      (pos) => setStoreForm((prev) => ({ ...prev, lat: pos.coords.latitude.toFixed(6), lng: pos.coords.longitude.toFixed(6) })),
+      (pos) => setStoreForm((prev) => ({ ...prev, lat: pos.coords.latitude.toFixed(8), lng: pos.coords.longitude.toFixed(8) })),
       () => showToast("ไม่สามารถดึง GPS ได้", false)
     );
   };
@@ -135,7 +148,7 @@ export default function DashboardPage() {
 
   const fillEditLocation = () => {
     navigator.geolocation.getCurrentPosition(
-      (pos) => setEditStoreForm((p) => ({ ...p, lat: pos.coords.latitude.toFixed(6), lng: pos.coords.longitude.toFixed(6) })),
+      (pos) => setEditStoreForm((p) => ({ ...p, lat: pos.coords.latitude.toFixed(8), lng: pos.coords.longitude.toFixed(8) })),
       () => showToast("ไม่สามารถดึง GPS ได้", false)
     );
   };
@@ -460,7 +473,7 @@ export default function DashboardPage() {
                           <div className="min-w-0">
                             <p className="font-bold text-sm truncate" style={{ color: "var(--text)" }}>{store.name}</p>
                             <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
-                              {store.lat.toFixed(4)}, {store.lng.toFixed(4)} · {store.radius_meters}m
+                              {store.lat.toFixed(8)}, {store.lng.toFixed(8)} · {store.radius_meters}m
                             </p>
                           </div>
                         </a>

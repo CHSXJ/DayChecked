@@ -124,8 +124,8 @@ export default function AdminPage() {
   const fillCurrentLocation = () => {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        const lat = pos.coords.latitude.toFixed(6);
-        const lng = pos.coords.longitude.toFixed(6);
+        const lat = pos.coords.latitude.toFixed(8);
+        const lng = pos.coords.longitude.toFixed(8);
         if (editingStore) {
           setEditStoreForm((f) => ({ ...f, lat, lng }));
         } else {

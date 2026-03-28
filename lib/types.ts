@@ -6,6 +6,7 @@ export interface Store {
   radius_meters: number;
   owner_id: string;
   created_at: string;
+  allow_co_owners: boolean;
 }
 
 export interface Employee {
@@ -46,6 +47,7 @@ export interface AttendanceLog {
   lat: number;
   lng: number;
   is_valid_location: boolean;
+  reason: string | null;
 }
 
 export interface AttendanceLogWithEmployee extends AttendanceLog {
@@ -76,6 +78,7 @@ export interface CheckInRequest {
   lat: number;
   lng: number;
   pin: string;
+  reason?: string;
 }
 
 export interface CheckInResponse {
