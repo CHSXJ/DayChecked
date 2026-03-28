@@ -244,10 +244,24 @@ export default function AttendanceTable({ logs, month }: { logs: AttendanceLogWi
                   </td>
                   <td className="px-4 py-3 text-sm" style={{ color: "var(--text-muted)" }}>{formatTime(log.checked_at)}</td>
                   <td className="px-4 py-3">
-                    <span className="text-xs font-semibold"
-                      style={{ color: log.is_valid_location ? "var(--primary-dark)" : "var(--danger)" }}>
-                      {log.is_valid_location ? "✓ ในพื้นที่" : "✗ นอกพื้นที่"}
-                    </span>
+                    <a
+                      href={`https://www.google.com/maps?q=${log.lat},${log.lng}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 w-fit"
+                      title="ดูบน Google Maps"
+                    >
+                      <span className="text-xs font-semibold"
+                        style={{ color: log.is_valid_location ? "var(--primary-dark)" : "var(--danger)" }}>
+                        {log.is_valid_location ? "✓ ในพื้นที่" : "✗ นอกพื้นที่"}
+                      </span>
+                      <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                        {log.lat.toFixed(5)}, {log.lng.toFixed(5)}
+                      </span>
+                      <svg className="w-3 h-3 shrink-0" style={{ color: "var(--text-muted)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </a>
                   </td>
                 </tr>
               ))}

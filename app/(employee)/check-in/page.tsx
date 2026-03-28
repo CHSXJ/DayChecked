@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { createClient as createBrowserClient } from "@/lib/supabase-browser";
 import PinPad from "@/components/PinPad";
 import CheckInButton from "@/components/CheckInButton";
 import ThemeToggle from "@/components/ThemeToggle";
 import AppLogo from "@/components/AppLogo";
+import { getCurrentPosition, haversineDistance } from "@/lib/gps";
 import type { Store, EmployeePublic, AttendanceLog, CheckInResponse } from "@/lib/types";
 
-type Step = "loading" | "pin" | "confirm" | "success" | "error" | "no_record";
+type Step = "loading" | "gps" | "blocked" | "pin" | "success" | "error" | "no_record";
 
 export default function CheckInPage() {
   const supabase = createBrowserClient();
@@ -19,7 +20,31 @@ export default function CheckInPage() {
   const [lastType, setLastType] = useState<"in" | "out" | null>(null);
   const [successLog, setSuccessLog] = useState<AttendanceLog | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
+  const [blockedMessage, setBlockedMessage] = useState("");
+  const [distance, setDistance] = useState<number | null>(null);
   const [isOwner, setIsOwner] = useState(false);
+  const [pinVerified, setPinVerified] = useState(false);
+  const [pinError, setPinError] = useState("");
+  const [verifyingPin, setVerifyingPin] = useState(false);
+
+  const checkGps = useCallback(async (storeData: Store) => {
+    setStep("gps");
+    try {
+      const position = await getCurrentPosition();
+      const { latitude: lat, longitude: lng } = position.coords;
+      const dist = haversineDistance(lat, lng, storeData.lat, storeData.lng);
+      setDistance(Math.round(dist));
+      if (dist > storeData.radius_meters) {
+        setBlockedMessage(`อยู่นอกพื้นที่ ${Math.round(dist)} เมตร (อนุญาต ${storeData.radius_meters} เมตร)`);
+        setStep("blocked");
+      } else {
+        setStep("pin");
+      }
+    } catch (err) {
+      setBlockedMessage(err instanceof Error ? err.message : "ไม่สามารถระบุ GPS ได้");
+      setStep("blocked");
+    }
+  }, []);
 
   useEffect(() => {
     const load = async () => {
@@ -38,15 +63,39 @@ export default function CheckInPage() {
       const { data: lastLogRaw } = await supabase.from("attendance_logs").select("type").eq("employee_id", emp.id).order("checked_at", { ascending: false }).limit(1).maybeSingle();
       const lastLog = lastLogRaw as { type: "in" | "out" } | null;
       setLastType(lastLog?.type ?? null);
-      setStep("pin");
+      await checkGps(storeData);
     };
     load();
-  }, [supabase]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const handlePinComplete = (p: string) => { setPin(p); setStep("confirm"); };
+  const handlePinComplete = async (p: string) => {
+    setPin(p);
+    setPinVerified(false);
+    setPinError("");
+    setVerifyingPin(true);
+    try {
+      const res = await fetch("/api/verify-pin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employee_id: employee?.id, pin: p }),
+      });
+      const data = await res.json();
+      if (data.valid) {
+        setPinVerified(true);
+      } else {
+        setPinError("PIN ไม่ถูกต้อง กรุณาลองใหม่");
+      }
+    } catch {
+      setPinError("ไม่สามารถตรวจสอบ PIN ได้");
+    } finally {
+      setVerifyingPin(false);
+    }
+  };
   const handleSuccess = (log: CheckInResponse["log"]) => { if (log) { setSuccessLog(log); setLastType(log.type); } setStep("success"); };
   const handleError = (msg: string) => { setErrorMessage(msg); setStep("error"); };
-  const reset = () => { setPin(""); setStep("pin"); setErrorMessage(""); };
+  const reset = () => { setPin(""); setPinVerified(false); setPinError(""); setStep("pin"); setErrorMessage(""); };
+  const recheckLocation = () => { if (store) checkGps(store); };
   const signOut = () => supabase.auth.signOut().then(() => (window.location.href = "/login"));
   const formatTime = (iso: string) => new Date(iso).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
 
@@ -85,9 +134,20 @@ export default function CheckInPage() {
         </div>
 
         {/* Loading */}
-        {step === "loading" && (
+        {(step === "loading") && (
           <div className="card-glass p-12 text-center animate-pulse" style={{ color: "var(--text-muted)" }}>
             กำลังโหลด...
+          </div>
+        )}
+
+        {/* GPS checking */}
+        {step === "gps" && (
+          <div className="card-glass p-12 text-center space-y-3 animate-pulse">
+            <svg className="w-8 h-8 mx-auto animate-spin" style={{ color: "var(--primary)" }} fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+            </svg>
+            <p className="text-sm" style={{ color: "var(--text-muted)" }}>กำลังตรวจสอบ GPS...</p>
           </div>
         )}
 
@@ -106,11 +166,11 @@ export default function CheckInPage() {
           </div>
         )}
 
-        {/* Employee info + PIN */}
-        {(step === "pin" || step === "confirm") && employee && store && (
-          <>
+        {/* Blocked — outside area or GPS error */}
+        {step === "blocked" && employee && store && (
+          <div className="space-y-4 animate-fade-up">
             {/* Employee card */}
-            <div className="card-glass p-4 flex items-center gap-3 animate-fade-up">
+            <div className="card-glass p-4 flex items-center gap-3">
               <div className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 text-base font-bold"
                 style={{ background: "linear-gradient(135deg,#a3e635,#84cc16)", color: "#1a2e05" }}>
                 {employee.name.charAt(0)}
@@ -120,31 +180,90 @@ export default function CheckInPage() {
                 <p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>{store.name}</p>
               </div>
               <span className={lastType === "in" ? "badge-orange" : "badge-lime"}>
-                {lastType === "in" ? "กำลังทำงาน" : "นอกงาน"}
+                {lastType === "in" ? "กำลังทำงาน" : "ยังไม่เข้างาน"}
               </span>
             </div>
 
+            {/* Out of area card */}
+            <div className="card-glass p-8 text-center space-y-4">
+              <div className="inline-flex w-16 h-16 rounded-full items-center justify-center mx-auto"
+                style={{ background: "var(--danger-bg)" }}>
+                <svg className="w-8 h-8" style={{ color: "var(--danger)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-lg font-extrabold" style={{ color: "var(--text)" }}>อยู่นอกพื้นที่</p>
+                <p className="text-sm mt-1" style={{ color: "var(--danger)" }}>{blockedMessage}</p>
+              </div>
+              <button onClick={recheckLocation} className="btn-outlined flex items-center gap-2 mx-auto">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                ตรวจสอบอีกครั้ง
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* In area — PIN + button */}
+        {step === "pin" && employee && store && (
+          <div className="space-y-4 animate-fade-up">
+            {/* Employee card */}
+            <div className="card-glass p-4 flex items-center gap-3">
+              <div className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 text-base font-bold"
+                style={{ background: "linear-gradient(135deg,#a3e635,#84cc16)", color: "#1a2e05" }}>
+                {employee.name.charAt(0)}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-sm truncate" style={{ color: "var(--text)" }}>{employee.name}</p>
+                <p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>{store.name}</p>
+              </div>
+              <span className={lastType === "in" ? "badge-orange" : "badge-lime"}>
+                {lastType === "in" ? "กำลังทำงาน" : "ยังไม่เข้างาน"}
+              </span>
+            </div>
+
+            {/* Location badge */}
+            <div className="card-glass px-4 py-2.5 flex items-center gap-2">
+              <svg className="w-4 h-4 shrink-0" style={{ color: "var(--primary-dark)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <p className="text-sm font-semibold" style={{ color: "var(--primary-dark)" }}>
+                อยู่ในพื้นที่
+                {distance !== null && <span className="font-normal text-xs ml-1" style={{ color: "var(--text-muted)" }}>({distance} เมตรจากร้าน)</span>}
+              </p>
+            </div>
+
             {/* PIN card */}
-            <div className="card-glass p-6 space-y-6 animate-fade-up">
+            <div className="card-glass p-6 space-y-6">
               <p className="text-center text-sm font-semibold" style={{ color: "var(--text-muted)" }}>
                 กรอก PIN 4 หลักเพื่อยืนยัน
               </p>
-              <PinPad onComplete={handlePinComplete} disabled={step === "confirm"} />
+              <PinPad onComplete={handlePinComplete} disabled={verifyingPin} />
+              {verifyingPin && (
+                <p className="text-center text-xs" style={{ color: "var(--text-muted)" }}>กำลังตรวจสอบ PIN...</p>
+              )}
+              {pinError && !verifyingPin && (
+                <p className="text-center text-sm font-semibold" style={{ color: "var(--danger)" }}>{pinError}</p>
+              )}
             </div>
-          </>
-        )}
 
-        {/* Action button */}
-        {step === "confirm" && employee && store && (
-          <div className="card-glass p-4 animate-fade-up">
-            <CheckInButton
-              employeeId={employee.id}
-              store={store}
-              pin={pin}
-              lastType={lastType}
-              onSuccess={handleSuccess}
-              onError={handleError}
-            />
+            {/* Action button — shown only after PIN verified */}
+            {pinVerified && (
+              <div className="card-glass p-4">
+                <CheckInButton
+                  employeeId={employee.id}
+                  store={store}
+                  pin={pin}
+                  lastType={lastType}
+                  onSuccess={handleSuccess}
+                  onError={handleError}
+                />
+              </div>
+            )}
           </div>
         )}
 

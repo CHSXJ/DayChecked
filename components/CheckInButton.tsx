@@ -11,9 +11,10 @@ interface CheckInButtonProps {
   lastType: "in" | "out" | null;
   onSuccess: (log: CheckInResponse["log"]) => void;
   onError: (message: string) => void;
+  disabled?: boolean;
 }
 
-export default function CheckInButton({ employeeId, store, pin, lastType, onSuccess, onError }: CheckInButtonProps) {
+export default function CheckInButton({ employeeId, store, pin, lastType, onSuccess, onError, disabled = false }: CheckInButtonProps) {
   const [loading, setLoading] = useState(false);
   const submitting = useRef(false);
   const isCheckIn = lastType !== "in";
@@ -45,12 +46,14 @@ export default function CheckInButton({ employeeId, store, pin, lastType, onSucc
     }
   };
 
+  const isDisabled = loading || !pin || disabled;
+
   return (
     <button
       onClick={handleClick}
-      disabled={loading || !pin}
+      disabled={isDisabled}
       className={`w-full py-4 text-base font-bold transition-all duration-150 active:scale-95 rounded-full ${
-        loading || !pin ? "opacity-50 cursor-not-allowed" : ""
+        isDisabled ? "opacity-40 cursor-not-allowed" : ""
       } ${isCheckIn ? "btn-lime" : "btn-orange"}`}
     >
       {loading ? (
