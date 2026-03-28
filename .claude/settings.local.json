@@ -17,7 +17,9 @@
       "Bash(ls app/\\\\\\(employee\\\\\\)/)",
       "Bash(ls app/\\\\\\(owner\\\\\\)/)",
       "Bash(ls app/\\\\\\(employee\\\\\\)/check-in/)",
-      "Bash(ls app/\\\\\\(owner\\\\\\)/dashboard/)"
+      "Bash(ls app/\\\\\\(owner\\\\\\)/dashboard/)",
+      "Bash(ls /Users/cher/Workspace/day-checked/app/\\\\\\(owner\\\\\\)/dashboard/)",
+      "Bash(ls /Users/cher/Workspace/day-checked/app/\\\\\\(owner\\\\\\)/)"
     ]
   }
 }

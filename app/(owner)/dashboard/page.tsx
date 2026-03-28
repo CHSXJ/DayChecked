@@ -450,20 +450,20 @@ export default function DashboardPage() {
                         onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface-2)")}
                         onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                       >
-                        <div className="flex items-center gap-3">
+                        <a href={`/dashboard/stores/${store.id}`} className="flex items-center gap-3 flex-1 min-w-0">
                           <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
                             style={{ background: "linear-gradient(135deg,#a3e635,#84cc16)" }}>
                             <svg className="w-5 h-5" style={{ color: "#1a2e05" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                             </svg>
                           </div>
-                          <div>
-                            <p className="font-bold text-sm" style={{ color: "var(--text)" }}>{store.name}</p>
+                          <div className="min-w-0">
+                            <p className="font-bold text-sm truncate" style={{ color: "var(--text)" }}>{store.name}</p>
                             <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
                               {store.lat.toFixed(4)}, {store.lng.toFixed(4)} · {store.radius_meters}m
                             </p>
                           </div>
-                        </div>
+                        </a>
                           <div className="flex items-center gap-1">
                           <button onClick={() => openEditStore(store)}
                             className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
